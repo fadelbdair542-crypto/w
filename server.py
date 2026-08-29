@@ -1,109 +1,47 @@
-import json
 import os
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import Lock
+from flask import Flask, request, jsonify
 
-workers = {}
-lock = Lock()
+app = Flask(__name__)
 
+worker_hashrates = {}
 
-class Handler(BaseHTTPRequestHandler):
+@app.route("/")
+def home():
+    return "Mining Monitor läuft"
 
-    def send_json(self, status, data):
-        body = json.dumps(data).encode("utf-8")
+@app.route("/hashrate", methods=["POST"])
+def hashrate():
+    data = request.get_json(silent=True) or {}
 
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
+    worker_id = data.get("worker_id")
+    hashrate = float(data.get("hashrate", 0))
 
-        self.wfile.write(body)
+    worker_hashrates[str(worker_id)] = hashrate
 
-    def do_GET(self):
-        if self.path == "/":
-            self.send_json(200, {
-                "status": "online",
-                "service": "Mining Monitor"
-            })
-            return
+    return jsonify({
+        "ok": True,
+        "worker_id": worker_id,
+        "hashrate": hashrate
+    })
 
-        if self.path == "/workers":
-            with lock:
-                data = dict(workers)
+@app.route("/monitor")
+def monitor():
+    total = sum(worker_hashrates.values())
 
-            total = sum(data.values())
+    output = []
+    output.append("MINING MONITOR")
+    output.append("=" * 40)
+    output.append(f"Worker aktiv: {len(worker_hashrates)}")
+    output.append(f"Gesamthashrate: {total:,.0f} H/s")
+    output.append("")
 
-            self.send_json(200, {
-                "workers": data,
-                "total_hashrate": total
-            })
-            return
+    for worker_id, hashrate in worker_hashrates.items():
+        output.append(
+            f"Worker {worker_id}: {hashrate:,.0f} H/s"
+        )
 
-        self.send_json(404, {
-            "error": "Not found"
-        })
+    return "<pre>" + "\n".join(output) + "</pre>"
 
-    def do_POST(self):
-        if self.path != "/hashrate":
-            self.send_json(404, {
-                "error": "Not found"
-            })
-            return
-
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-
-            if length <= 0 or length > 10000:
-                self.send_json(400, {
-                    "error": "Invalid request"
-                })
-                return
-
-            raw_data = self.rfile.read(length)
-            data = json.loads(raw_data.decode("utf-8"))
-
-            worker_id = str(data["worker_id"])
-            hashrate = float(data["hashrate"])
-
-            if hashrate < 0:
-                raise ValueError("Invalid hashrate")
-
-            with lock:
-                workers[worker_id] = hashrate
-
-            print(
-                f"Worker {worker_id}: {hashrate:,.0f} H/s",
-                flush=True
-            )
-
-            self.send_json(200, {
-                "success": True
-            })
-
-        except Exception as e:
-            print(f"Fehler: {e}", flush=True)
-
-            self.send_json(400, {
-                "success": False,
-                "error": "Invalid data"
-            })
-
-    def log_message(self, format, *args):
-        pass
-
-
-port = int(os.environ.get("PORT", "8080"))
-
-server = ThreadingHTTPServer(
-    ("0.0.0.0", port),
-    Handler
-)
-
-print("=" * 50)
-print("       MINING MONITOR SERVER")
-print("=" * 50)
-print(f"Server läuft auf Port {port}")
-print("=" * 50)
-
-server.serve_forever()
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
