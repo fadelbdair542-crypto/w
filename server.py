@@ -7,7 +7,10 @@ worker_hashrates = {}
 
 @app.route("/")
 def home():
-    return "Mining Monitor läuft"
+    return jsonify({
+        "status": "online",
+        "service": "Mining Monitor"
+    })
 
 @app.route("/hashrate", methods=["POST"])
 def hashrate():
@@ -28,19 +31,20 @@ def hashrate():
 def monitor():
     total = sum(worker_hashrates.values())
 
-    output = []
-    output.append("MINING MONITOR")
-    output.append("=" * 40)
-    output.append(f"Worker aktiv: {len(worker_hashrates)}")
-    output.append(f"Gesamthashrate: {total:,.0f} H/s")
-    output.append("")
+    lines = [
+        "MINING MONITOR",
+        "==============================",
+        f"Worker aktiv: {len(worker_hashrates)}",
+        f"Gesamthashrate: {total:,.0f} H/s",
+        ""
+    ]
 
     for worker_id, hashrate in worker_hashrates.items():
-        output.append(
+        lines.append(
             f"Worker {worker_id}: {hashrate:,.0f} H/s"
         )
 
-    return "<pre>" + "\n".join(output) + "</pre>"
+    return "<pre>" + "\n".join(lines) + "</pre>"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
